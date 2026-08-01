@@ -1,0 +1,114 @@
+// This is your Prisma schema file.
+// Learn more about it at https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// STATIONS
+// order: integer position along the route (0 = Colombo Fort, 39 = Badulla)
+// distanceKm: kilometres from Colombo Fort — used for fare calculation
+// ─────────────────────────────────────────────
+model Station {
+  id           String    @id @default(cuid())
+  name         String    @unique
+  order        Int       @unique           // ascending position on the line
+  distanceKm   Float                       // from Colombo Fort
+  createdAt    DateTime  @default(now())
+
+  fromBookings Booking[] @relation("FromStation")
+  toBookings   Booking[] @relation("ToStation")
+
+  @@index([order])
+}
+
+// ─────────────────────────────────────────────
+// COACHES
+// type: RESERVED seats must be booked; UNRESERVED is first-come-first-served
+// capacity: configurable — the department may add more seats or coaches later
+// ─────────────────────────────────────────────
+model Coach {
+  id        String    @id @default(cuid())
+  name      String    @unique              // e.g. "R1", "R2", "U1"
+  type      CoachType
+  capacity  Int                            // seats per coach (informational for UNRESERVED)
+  seats     Seat[]
+  createdAt DateTime  @default(now())
+}
+
+enum CoachType {
+  RESERVED
+  UNRESERVED
+}
+
+// ─────────────────────────────────────────────
+// SEATS
+// Only RESERVED coach seats are individually tracked.
+// UNRESERVED coaches are first-come-first-served — no seat assignment.
+// ─────────────────────────────────────────────
+model Seat {
+  id         String    @id @default(cuid())
+  coachId    String
+  coach      Coach     @relation(fields: [coachId], references: [id])
+  seatNumber String                        // e.g. "1A", "12D"
+  bookings   Booking[]
+  createdAt  DateTime  @default(now())
+
+  @@unique([coachId, seatNumber])
+  @@index([coachId])
+}
+
+// ─────────────────────────────────────────────
+// BOOKINGS
+//
+// Core design decision — interval representation:
+// We denormalise fromStationOrder and toStationOrder directly on the
+// booking row so that overlap detection is a single, index-friendly
+// integer comparison (no JOIN to stations required).
+//
+// A new booking [fromOrder, toOrder) CONFLICTS with an existing booking
+// [existingFrom, existingTo) when:
+//   newFrom < existingTo  AND  newTo > existingFrom
+//
+// The booking represents a HALF-OPEN interval: the passenger occupies
+// the seat from the departure station UP TO BUT NOT INCLUDING the
+// arrival station. This means two consecutive bookings (A→B, B→C)
+// never conflict — the seat is free for the next passenger the moment
+// it arrives at B.
+// ─────────────────────────────────────────────
+model Booking {
+  id                String        @id @default(cuid())
+
+  seatId            String
+  seat              Seat          @relation(fields: [seatId], references: [id])
+
+  fromStationId     String
+  fromStation       Station       @relation("FromStation", fields: [fromStationId], references: [id])
+
+  toStationId       String
+  toStation         Station       @relation("ToStation", fields: [toStationId], references: [id])
+
+  // Denormalised for fast overlap queries — kept in sync with fromStation/toStation
+  fromStationOrder  Int
+  toStationOrder    Int
+
+  passengerName     String
+  fareAmount        Float                    // LKR
+
+  status            BookingStatus @default(CONFIRMED)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([seatId, status, fromStationOrder, toStationOrder])
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+}
