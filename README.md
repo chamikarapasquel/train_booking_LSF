@@ -1,65 +1,188 @@
-# Lanka Scenic Rail — Segment-Based Train Seat Booking System
+# Lanka Scenic Rail — Segment Booking System
 
-> **Colombo Fort → Badulla Upcountry Line** — Book only the distance you travel.
-
----
-
-## The Problem This Solves
-
-Sri Lanka's upcountry reserved coaches are frequently under-occupied for long stretches of the route. Under the old system, a passenger booking Colombo Fort → Kandy effectively paid for the entire Colombo Fort → Badulla journey, since their seat couldn't be re-sold after departure.
-
-This system lets a seat be booked in multiple non-overlapping segments. Passenger A travels Colombo Fort → Kandy; Passenger B then books Kandy → Badulla on the same physical seat — each paying only for their distance. Revenue increases, fares become fairer.
+A seat booking system for the Colombo Fort → Badulla upcountry train line where a seat can be
+booked by multiple passengers across different parts of the route — each paying only for the
+distance they actually travel.
 
 ---
 
-## Quick Start (Docker — recommended)
+## The Core Problem
 
-**Prerequisites:** Docker Desktop installed and running.
+On Sri Lanka's reserved coaches, once a passenger books Colombo Fort → Kandy, that seat
+sits empty from Kandy onwards. Nobody else can book it. The train loses revenue, and
+passengers pay more than they should.
 
-```bash
-# 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/train_booking_LSF.git
-cd train_booking_LSF
+This system solves that by letting the same physical seat be booked in non-overlapping
+segments. Passenger A takes it Colombo → Kandy. Passenger B books it Kandy → Badulla.
+Both pay only for their distance.
 
-# 2. Copy the environment file and set your own values
-cp .env.example .env
-# Edit .env — at minimum change POSTGRES_PASSWORD
+---
 
-# 3. Spin up everything
-docker-compose up --build
+## Design Decisions
+
+### 1. Half-Open Intervals for Segment Overlap
+
+Every booking stores two integers: `fromStationOrder` and `toStationOrder` — the position of
+each station on the route. A seat is considered taken if an existing booking overlaps the
+requested segment.
+
+The overlap check is:
+
+```
+existing.from < new.to  AND  existing.to > new.from
 ```
 
-That's it. The first startup:
-- Starts PostgreSQL and waits for it to be healthy
-- Runs `prisma migrate deploy` (applies the DB schema)
-- Runs the seed script (40 stations, 3 reserved coaches, 144 seats)
-- Starts the Express API on port 4000
-- Builds and serves the React frontend on port 3000
+**Why half-open `[from, to)` and not closed `[from, to]`?**
 
-**Visit:** http://localhost:3000
+With a closed interval, a booking from A→B and another from B→C would "conflict" at station B
+even though the first passenger already left. The half-open model avoids this completely —
+two back-to-back bookings never overlap, and the math stays simple with no special edge cases.
+
+**Why store order integers directly on the Booking row?**
+
+To avoid joining to the Station table on every availability check. The `(seatId, status,
+fromStationOrder, toStationOrder)` index turns the overlap query into a fast index-only scan.
+Denormalising those two integers is a small cost for a significant query simplification.
+
+**What was considered instead?**
+- Storing only station IDs and joining at query time — rejected because it adds a join on every
+  seat availability check, which runs every time the seat map loads.
 
 ---
 
-## Running in Development (without Docker)
+### 2. Pessimistic Locking to Prevent Double-Booking
 
-**Prerequisites:** Node.js 20+, a running PostgreSQL instance.
+**The race condition:** Two users open the seat map at the same time. Both see seat 1A as free.
+Both click it. Both submit. Without a lock, both bookings go through — one seat, two owners.
 
-```bash
-# 1. Set up the backend
-cd backend
-cp ../.env.example .env          # edit DATABASE_URL and other vars
-npm install
-npx prisma migrate deploy
-npx prisma db seed
-npm run dev                      # starts on :4000 with hot-reload
+**The fix:** Before checking availability, the booking transaction locks the seat row at the
+database level using `SELECT FOR UPDATE`. Any other transaction trying to book the same seat
+is blocked until the first one finishes.
 
-# 2. In a new terminal — set up the frontend
-cd frontend
-npm install
-npm run dev                      # starts on :5173, proxies /api to :4000
+```
+BEGIN
+  SELECT ... FROM Seat WHERE id = ? FOR UPDATE   ← blocks concurrent transactions here
+  check for overlapping confirmed bookings
+  if clear → INSERT booking
+COMMIT
 ```
 
-**Visit:** http://localhost:5173
+**Why pessimistic locking and not optimistic locking?**
+
+Optimistic locking works like this: read the current state, write only if nothing changed, retry
+if it did. That is fine when conflicts are rare. For a popular seat during a busy period, many
+users could be trying at once — optimistic locking would cause a storm of retries and make the
+user experience unpredictable. Pessimistic locking serialises access to one seat at a time. The
+lock is held for only a few milliseconds, so it is not a bottleneck in practice.
+
+**Why lock at the row level and not the table level?**
+
+Locking the whole table would mean no two bookings anywhere in the system could happen at the
+same time. Locking only the one seat row being booked leaves all other seats completely free to
+be booked concurrently.
+
+**The Prisma limitation:**
+Prisma's query builder does not support `FOR UPDATE` natively. The solution is to drop into a
+raw query just for the lock step, then continue the rest of the transaction with Prisma's
+typed API. It is a small compromise in exchange for full concurrency safety.
+
+---
+
+### 3. Soft Delete for Cancellations
+
+Cancelling a booking sets its `status` to `CANCELLED` instead of deleting the row.
+
+**Why not just delete it?**
+- Deleted rows cannot be audited or reported on later.
+- A soft delete keeps the history intact — useful for disputes, revenue tracking, and debugging.
+- The availability query simply ignores `CANCELLED` rows, so it stays just as simple.
+
+**What was considered instead?**
+- A separate `CancelledBookings` table — rejected because it splits the same data across two
+  tables for no real benefit.
+
+---
+
+### 4. Database and Tech Choices
+
+**PostgreSQL over MongoDB**
+
+This system needs proper transactions and row-level locking. MongoDB's document model does not
+support `SELECT FOR UPDATE`. Using it here would require building a custom locking mechanism
+from scratch, which would be fragile and hard to reason about. PostgreSQL gives ACID guarantees
+out of the box.
+
+**Express over a more opinionated framework (e.g. NestJS)**
+
+NestJS adds decorators, modules, and a lot of ceremony. For an API with four route files, that
+overhead is not justified. Express is explicit and predictable — you can read the entire routing
+setup in one file.
+
+**Prisma over a raw query builder (e.g. Knex)**
+
+Prisma generates TypeScript types from the schema automatically. Every query result is typed.
+This catches shape mismatches at compile time, not at runtime. The tradeoff is the occasional
+`$queryRaw` call when Prisma does not support a specific SQL feature (like `FOR UPDATE`).
+
+**REST over GraphQL**
+
+The API has six endpoints. GraphQL's main benefit — flexible querying — is not needed here. REST
+is simpler, easier to document, and has no overhead.
+
+**Vanilla CSS over Tailwind**
+
+The design system is built with CSS custom properties (variables). This gives full control over
+every token — colours, spacing, radius, shadows — without adding a build-time dependency or
+learning a utility class vocabulary. Every style in the project is readable plain CSS.
+
+**Vite over Create React App**
+
+CRA is no longer maintained and is slow. Vite starts in milliseconds and has native TypeScript
+and proxy support. It was the obvious choice.
+
+---
+
+### 5. Fare Calculation
+
+```
+fare = (destination_km − origin_km) × RATE_PER_KM
+```
+
+`distanceKm` for each station is stored in the database (distance from Colombo Fort).
+`RATE_PER_KM` is an environment variable — the railway department can change the fare rate
+without touching any code.
+
+**What was considered instead?**
+- A separate fares table with per-leg pricing — rejected for this scope. The linear distance
+  model is accurate enough and far simpler to manage.
+
+---
+
+## Challenges
+
+### Getting the interval edges exactly right
+
+The trickiest part was deciding whether station B belongs to the A→B booking or the B→C booking.
+If the interval is closed on both ends `[A, B]` and `[B, C]`, they conflict at B. The fix is
+the half-open interval `[from, to)` — the passenger occupies the seat up to but not including
+the arrival station, so the seat is free the moment it reaches that station. This makes
+consecutive bookings conflict-free with no special-case logic.
+
+### Prisma does not support SELECT FOR UPDATE
+
+Prisma's typed query builder has no `forUpdate()` option. The workaround is
+`tx.$queryRaw\`SELECT id FROM "Seat" WHERE id = ${id} FOR UPDATE\`` inside an interactive
+transaction. The result is just the ID — enough to acquire the lock. The rest of the
+transaction continues through Prisma's type-safe API. It works, but it means one raw SQL
+string lives in otherwise fully-typed code.
+
+### Docker networking between the browser and nginx
+
+The React app is served by nginx inside Docker. The browser, however, is outside Docker.
+When the browser makes an API call, it cannot reach `backend:4000` (the internal Docker
+hostname) — that only works container-to-container. The solution: nginx listens for
+`/api/*` requests coming in from the browser on port 3000 and forwards them to `backend:4000`
+internally. The browser never needs to know the backend's address.
 
 ---
 
@@ -73,155 +196,25 @@ train_booking_LSF/
 ├── backend/
 │   ├── prisma/
 │   │   ├── schema.prisma         # data model
-│   │   ├── seed.ts               # idempotent seed script
-│   │   └── migrations/           # version-controlled SQL migrations
+│   │   ├── seed.ts               # 40 stations, 3 reserved coaches, 144 seats
+│   │   └── migrations/
 │   └── src/
-│       ├── index.ts              # Express entry point
-│       ├── config.ts             # environment variable validation
+│       ├── index.ts              # Express app + global error handler
+│       ├── config.ts             # env variable validation
 │       ├── db.ts                 # singleton Prisma client
-│       ├── errors.ts             # typed AppError hierarchy
-│       ├── routes/               # Express routers
+│       ├── errors.ts             # typed error classes (404, 409, 400)
+│       ├── routes/               # stations, coaches, seats, bookings
 │       └── services/
-│           ├── availabilityService.ts   # interval overlap query
-│           └── bookingService.ts        # atomic booking with locking
+│           ├── availabilityService.ts   # interval overlap logic
+│           └── bookingService.ts        # atomic booking with row lock
 │
 └── frontend/
     └── src/
-        ├── App.tsx               # booking flow state machine
-        ├── api/client.ts         # typed API wrappers
-        ├── components/
-        │   ├── RouteSelect.tsx
-        │   ├── SeatMap.tsx       # AB/CD grid seat map
-        │   ├── PassengerForm.tsx
-        │   └── BookingConfirmation.tsx
-        └── index.css             # full design system (CSS variables)
+        ├── App.tsx               # 4-step booking flow state machine
+        ├── api/client.ts         # typed fetch wrappers
+        ├── components/           # RouteSelect, SeatMap, PassengerForm, BookingConfirmation
+        ├── types/index.ts        # shared TypeScript interfaces
+        └── index.css             # full design system via CSS variables
 ```
-
----
-
-## Core Design Decisions
-
-### 1. Half-Open Interval Model for Segment Booking
-
-Each booking stores `fromStationOrder` and `toStationOrder` (integer positions on the route) directly on the booking row (denormalised). A new booking `[newFrom, newTo)` conflicts with an existing `[existFrom, existTo)` when:
-
-```
-existFrom < newTo  AND  existTo > newFrom
-```
-
-**Why half-open `[from, to)` instead of closed `[from, to]`?**
-Two consecutive bookings — A→B and B→C — should *not* conflict. With a half-open interval, the passenger leaving at B and the passenger boarding at B share no overlap. The availability query becomes a pair of integer comparisons with no edge cases.
-
-**Why denormalise the order values onto the Booking row?**
-To avoid joining to the `Station` table on every availability check. The composite index on `(seatId, status, fromStationOrder, toStationOrder)` makes overlap detection a single, index-only scan.
-
----
-
-### 2. Pessimistic Locking (SELECT FOR UPDATE) for Concurrency
-
-**The race condition:** Two users simultaneously check seat 1A for Colombo→Kandy. Both see it free. Both insert a booking. Double-booking.
-
-**Solution:** Inside a Prisma `$transaction`, we lock the seat row before the availability check:
-
-```sql
-BEGIN;
-  SELECT id FROM "Seat" WHERE id = $seatId FOR UPDATE;
-  -- All other transactions trying to lock this row BLOCK here.
-  -- The check-then-insert is now safe.
-  SELECT COUNT(*) FROM "Booking" WHERE seatId = $seatId AND status = 'CONFIRMED'
-    AND fromStationOrder < $toOrder AND toStationOrder > $fromOrder;
-  INSERT INTO "Booking" ...;
-COMMIT;
-```
-
-**Why pessimistic over optimistic?**
-Optimistic locking (read-version, write-if-version-unchanged, retry on conflict) works well when conflicts are rare. During peak booking, a popular seat can have dozens of concurrent attempts. Pessimistic locking serialises access to one seat row; the lock is held for ~5ms. Optimistic locking would cause a retry storm that's harder to reason about and exposes users to more uncertainty.
-
-**Why row-level, not table-level?**
-We lock only the one seat being booked. All other seats remain fully concurrent.
-
----
-
-### 3. Soft-Delete for Cancellations
-
-Cancelled bookings set `status = 'CANCELLED'` rather than being deleted. This:
-- Preserves the booking history (audit trail, revenue reporting)
-- Makes the availability query simple: only `status = 'CONFIRMED'` rows are considered
-
----
-
-### 4. Configurable Route & Fleet
-
-Stations, coaches, and seats are database-seeded — not hardcoded. The route can be extended (new stations, different order) by updating the seed file and running a new migration. Coach count and seat layout (rows × columns) are controlled by env vars `RESERVED_COACH_ROWS` and `RESERVED_COACH_COLS`.
-
----
-
-### 5. Tech Stack
-
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Runtime | Node.js + TypeScript | Type safety end-to-end; great Prisma integration |
-| Framework | Express | Lightweight, explicit; no magic |
-| ORM | Prisma | Typed queries, migrations, `$queryRaw` for `FOR UPDATE` |
-| Database | PostgreSQL | ACID, `SELECT FOR UPDATE`, reliable advisory locks |
-| Frontend | React + Vite | Component model suits seat map; Vite is fast |
-| Styling | Vanilla CSS | Full control; no framework overhead |
-| Container | Docker + nginx | Single-command startup; nginx proxies /api in prod |
-
-**Alternatives considered:**
-- **MongoDB** — rejected; ACID transactions and `SELECT FOR UPDATE` are non-negotiable for a booking system
-- **Optimistic locking** — rejected; see concurrency section above
-- **GraphQL** — rejected; REST is simpler and sufficient for this API surface
-- **Next.js** — rejected; adds SSR complexity we don't need for a SPA booking flow
-
----
-
-## API Reference
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/stations` | All stations, ordered by route position |
-| `GET` | `/api/coaches` | All coaches with type and capacity |
-| `GET` | `/api/seats/availability?fromStationId=X&toStationId=Y` | Seat availability for a leg |
-| `POST` | `/api/bookings` | Create a booking (atomic, `409` on conflict) |
-| `GET` | `/api/bookings/:id` | Get booking details |
-| `DELETE` | `/api/bookings/:id` | Cancel a booking (soft-delete) |
-| `GET` | `/health` | Health check |
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTGRES_DB` | `train_booking` | PostgreSQL database name |
-| `POSTGRES_USER` | `trainuser` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | — | **Set this in .env** |
-| `DATABASE_URL` | — | Full connection string (auto-built by docker-compose) |
-| `PORT` | `4000` | Backend port |
-| `RATE_PER_KM` | `2.5` | LKR per km for reserved coach fares |
-| `RESERVED_COACH_ROWS` | `12` | Rows per reserved coach (seed-time config) |
-| `RESERVED_COACH_COLS` | `4` | Columns per reserved coach (A/B/C/D) |
-
----
-
-## Challenges
-
-**1. Interval overlap correctness at the edges**
-Getting the half-open interval right took careful thought. Specifically: should station B be included in the A→B booking? If both are closed (inclusive), then A→B and B→C conflict at B. The half-open model `[from, to)` cleanly solves this — two consecutive bookings never share an overlapping order value.
-
-**2. Prisma + SELECT FOR UPDATE**
-Prisma's typed query builder doesn't support `FOR UPDATE` directly. The solution is `tx.$queryRaw\`SELECT id FROM "Seat" WHERE id = ${id} FOR UPDATE\`` inside an interactive transaction — giving us the lock while keeping the rest of the booking logic in Prisma's type-safe API.
-
-**3. Docker-compose networking**
-The React frontend is served by nginx, which runs inside the Docker network. The browser accesses the frontend from outside Docker (`localhost:3000`). API calls from the browser must also go to `localhost:4000` — not `backend:4000` (which is the internal Docker hostname). The nginx `proxy_pass` configuration handles this: the browser hits `localhost:3000/api/*`, nginx forwards it to `backend:4000` inside the Docker network. No environment-baking of the API URL needed.
-
----
-
-## Fare Logic
-
-`fare = (destination_km - origin_km) × RATE_PER_KM`
-
-Where `RATE_PER_KM` defaults to LKR 2.50/km. Example: Colombo Fort → Kandy (121 km) = **LKR 302.50**.
-
-The rate is configurable via `.env`, making it trivial for the department to adjust pricing without a code change.
+#   t r a i n _ b o o k i n g _ L S F  
+ 
