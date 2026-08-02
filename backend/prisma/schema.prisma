@@ -21,8 +21,10 @@ model Station {
   distanceKm   Float                       // from Colombo Fort
   createdAt    DateTime  @default(now())
 
-  fromBookings Booking[] @relation("FromStation")
-  toBookings   Booking[] @relation("ToStation")
+  fromBookings      Booking[]       @relation("FromStation")
+  toBookings        Booking[]       @relation("ToStation")
+  waitlistFrom      WaitlistEntry[] @relation("WaitlistFrom")
+  waitlistTo        WaitlistEntry[] @relation("WaitlistTo")
 
   @@index([order])
 }
@@ -95,10 +97,57 @@ model Booking {
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
+  // Reverse relation: a waitlist entry that was promoted to this booking
+  promotedFrom WaitlistEntry?
+
   @@index([seatId, status, fromStationOrder, toStationOrder])
 }
 
 enum BookingStatus {
   CONFIRMED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────────
+// WAITLIST
+// Passengers join the waitlist when all seats are occupied for a leg.
+// When a CONFIRMED booking on an overlapping segment is cancelled, the
+// earliest WAITING entry is atomically promoted: a new CONFIRMED Booking
+// is created for it and the entry status is set to PROMOTED.
+// ─────────────────────────────────────────────
+model WaitlistEntry {
+  id                String        @id @default(cuid())
+
+  fromStationId     String
+  fromStation       Station       @relation("WaitlistFrom", fields: [fromStationId], references: [id])
+
+  toStationId       String
+  toStation         Station       @relation("WaitlistTo", fields: [toStationId], references: [id])
+
+  // Denormalised for fast overlap queries — same pattern as Booking
+  fromStationOrder  Int
+  toStationOrder    Int
+
+  passengerName     String
+  fareAmount        Float                       // LKR — pre-calculated at join time
+
+  // Queue position within this leg (lower = earlier)
+  position          Int
+
+  status            WaitlistStatus @default(WAITING)
+
+  // Filled when the entry is promoted to a confirmed booking
+  promotedBookingId String?        @unique
+  promotedBooking   Booking?       @relation(fields: [promotedBookingId], references: [id])
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([fromStationOrder, toStationOrder, status, position])
+}
+
+enum WaitlistStatus {
+  WAITING
+  PROMOTED
   CANCELLED
 }

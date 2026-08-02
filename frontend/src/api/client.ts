@@ -7,7 +7,7 @@
  * No environment-specific URL needed in the code.
  */
 
-import type { Station, Coach, SeatAvailability, Booking } from '../types';
+import type { Station, Coach, SeatAvailability, Booking, WaitlistEntry } from '../types';
 
 const BASE = '/api';
 
@@ -80,4 +80,30 @@ export async function cancelBooking(bookingId: string): Promise<Booking> {
     method: 'DELETE',
   });
   return data.booking;
+}
+
+// ── Waitlist ──────────────────────────────────────────────────────────────────
+
+export async function joinWaitlist(payload: {
+  fromStationId: string;
+  toStationId:   string;
+  passengerName: string;
+}): Promise<WaitlistEntry> {
+  const data = await request<{ entry: WaitlistEntry }>('/waitlist', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data.entry;
+}
+
+export async function fetchWaitlistEntry(entryId: string): Promise<WaitlistEntry> {
+  const data = await request<{ entry: WaitlistEntry }>(`/waitlist/${entryId}`);
+  return data.entry;
+}
+
+export async function cancelWaitlistEntry(entryId: string): Promise<WaitlistEntry> {
+  const data = await request<{ entry: WaitlistEntry }>(`/waitlist/${entryId}`, {
+    method: 'DELETE',
+  });
+  return data.entry;
 }

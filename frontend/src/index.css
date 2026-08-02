@@ -1385,6 +1385,258 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.2; }
   color: #a5b4fc;
 }
 
+/* Amber waitlist alert */
+.alert-waitlist {
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.28);
+  color: #fcd34d;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ── Waitlist step in StepIndicator ─────────────────────────────────────────── */
+.step.waitlisted .step-circle {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #000;
+  box-shadow: 0 0 0 4px rgba(245,158,11,0.2);
+}
+.step.waitlisted .step-label { color: var(--color-primary); }
+.step-connector.waitlisted   { background: var(--color-primary); opacity: 0.5; }
+
+/* ── Waitlist Button ─────────────────────────────────────────────────────────── */
+.btn-waitlist {
+  background: rgba(245,158,11,0.12);
+  color: var(--color-primary);
+  border: 1.5px solid rgba(245,158,11,0.4);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-6);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+.btn-waitlist:hover:not(:disabled) {
+  background: rgba(245,158,11,0.22);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+.btn-waitlist:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Waitlist Confirmation Card ──────────────────────────────────────────────── */
+.waitlist-card {
+  background: var(--color-surface);
+  border: 1px solid rgba(245,158,11,0.2);
+  border-radius: var(--radius-lg);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-md), 0 0 32px rgba(245,158,11,0.06);
+}
+
+/* ── Queue Position Ring ── */
+.waitlist-position-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.waitlist-position-ring {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--color-primary) 0deg,
+    rgba(245,158,11,0.15) 0deg
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(245,158,11,0.25);
+  animation: ringPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes ringPulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(245,158,11,0.2); }
+  50%       { box-shadow: 0 0 32px rgba(245,158,11,0.45); }
+}
+
+.waitlist-position-inner {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.waitlist-position-num {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-primary);
+  line-height: 1;
+}
+
+.waitlist-position-of {
+  font-size: 0.58rem;
+  color: var(--color-text-dim);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.waitlist-position-label {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.waitlist-position-sub {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Pulsing status dot */
+.waitlist-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-success);
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ── Waitlist Detail Grid ── */
+.waitlist-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.waitlist-detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.waitlist-detail-label {
+  font-size: 0.7rem;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.waitlist-detail-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.waitlist-detail-value.highlight {
+  color: var(--color-primary);
+  font-size: 1.1rem;
+}
+
+/* ── Waitlist ID row ── */
+.waitlist-id-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-4);
+}
+
+.waitlist-id-label {
+  font-size: 0.65rem;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.waitlist-id-value {
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  word-break: break-all;
+}
+
+/* ── Waitlist note ── */
+.waitlist-note {
+  font-size: 0.8rem;
+  color: var(--color-text-dim);
+  line-height: 1.6;
+  padding: var(--space-3) var(--space-4);
+  background: rgba(245,158,11,0.05);
+  border-left: 3px solid rgba(245,158,11,0.3);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+/* ── Promoted card variant ── */
+.waitlist-card.promoted {
+  border-color: rgba(16,185,129,0.3);
+  box-shadow: var(--shadow-md), 0 0 32px rgba(16,185,129,0.08);
+}
+
+.waitlist-promoted-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.waitlist-promoted-icon {
+  font-size: 2.5rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.waitlist-promoted-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--color-success);
+  font-family: var(--font-serif);
+}
+
+.waitlist-promoted-sub {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+
 /* ── Loader / skeleton ──────────────────────────────────────────────────────── */
 .loading-spinner {
   display: flex;

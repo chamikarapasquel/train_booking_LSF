@@ -7,6 +7,7 @@ import stationsRouter from './routes/stations';
 import coachesRouter  from './routes/coaches';
 import seatsRouter    from './routes/seats';
 import bookingsRouter from './routes/bookings';
+import waitlistRouter from './routes/waitlist';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use('/api/stations', stationsRouter);
 app.use('/api/coaches',  coachesRouter);
 app.use('/api/seats',    seatsRouter);
 app.use('/api/bookings', bookingsRouter);
+app.use('/api/waitlist', waitlistRouter);
 
 // Health check — useful for Docker Compose readiness probes
 app.get('/health', (_req, res) => {

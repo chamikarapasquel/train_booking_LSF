@@ -3,6 +3,7 @@
 import { prisma } from '../db';
 import { config } from '../config';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
+import { promoteFromWaitlist } from './waitlistService';
 
 export interface CreateBookingInput {
   seatId: string;
@@ -123,33 +124,44 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
 /**
  * Cancels a booking, freeing its seat segment for future bookings.
  * Uses a soft-delete (status = CANCELLED) so booking history is preserved.
+ * Atomically promotes the earliest waitlisted passenger for the same leg,
+ * if one exists and a seat is now available.
  */
 export async function cancelBooking(bookingId: string): Promise<BookingResult> {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-    include: {
-      seat:        { include: { coach: true } },
-      fromStation: true,
-      toStation:   true,
-    },
+  return prisma.$transaction(async (tx) => {
+    const booking = await tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        seat:        { include: { coach: true } },
+        fromStation: true,
+        toStation:   true,
+      },
+    });
+
+    if (!booking) throw new NotFoundError(`Booking not found: ${bookingId}`);
+    if (booking.status === 'CANCELLED') {
+      throw new ConflictError('Booking is already cancelled');
+    }
+
+    const updated = await tx.booking.update({
+      where: { id: bookingId },
+      data:  { status: 'CANCELLED' },
+      include: {
+        seat:        { include: { coach: true } },
+        fromStation: true,
+        toStation:   true,
+      },
+    });
+
+    // Atomically promote the next waitlisted passenger (if any) for this leg
+    await promoteFromWaitlist(
+      booking.fromStationOrder,
+      booking.toStationOrder,
+      tx,
+    );
+
+    return formatBooking(updated);
   });
-
-  if (!booking) throw new NotFoundError(`Booking not found: ${bookingId}`);
-  if (booking.status === 'CANCELLED') {
-    throw new ConflictError('Booking is already cancelled');
-  }
-
-  const updated = await prisma.booking.update({
-    where: { id: bookingId },
-    data:  { status: 'CANCELLED' },
-    include: {
-      seat:        { include: { coach: true } },
-      fromStation: true,
-      toStation:   true,
-    },
-  });
-
-  return formatBooking(updated);
 }
 
 /**

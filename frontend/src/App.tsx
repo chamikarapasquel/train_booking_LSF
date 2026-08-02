@@ -5,16 +5,18 @@ import RouteSelect from './components/RouteSelect';
 import SeatMap from './components/SeatMap';
 import PassengerForm from './components/PassengerForm';
 import BookingConfirmation from './components/BookingConfirmation';
-import type { Station, SeatAvailability, Booking, BookingStep } from './types';
+import WaitlistConfirmation from './components/WaitlistConfirmation';
+import type { Station, SeatAvailability, Booking, WaitlistEntry, BookingStep } from './types';
 
 const App: React.FC = () => {
   // ── Booking flow state ────────────────────────────────────────────────────
-  const [step,          setStep]          = useState<BookingStep>('SELECT_ROUTE');
-  const [fromStation,   setFromStation]   = useState<Station | null>(null);
-  const [toStation,     setToStation]     = useState<Station | null>(null);
-  const [estimatedFare, setEstimatedFare] = useState<number>(0);
-  const [selectedSeat,  setSelectedSeat]  = useState<SeatAvailability | null>(null);
-  const [booking,       setBooking]       = useState<Booking | null>(null);
+  const [step,           setStep]           = useState<BookingStep>('SELECT_ROUTE');
+  const [fromStation,    setFromStation]    = useState<Station | null>(null);
+  const [toStation,      setToStation]      = useState<Station | null>(null);
+  const [estimatedFare,  setEstimatedFare]  = useState<number>(0);
+  const [selectedSeat,   setSelectedSeat]   = useState<SeatAvailability | null>(null);
+  const [booking,        setBooking]        = useState<Booking | null>(null);
+  const [waitlistEntry,  setWaitlistEntry]  = useState<WaitlistEntry | null>(null);
 
   // ── Step handlers ─────────────────────────────────────────────────────────
   const handleRouteSelected = (from: Station, to: Station, fare: number) => {
@@ -35,12 +37,18 @@ const App: React.FC = () => {
     setStep('CONFIRMATION');
   };
 
+  const handleWaitlisted = (entry: WaitlistEntry) => {
+    setWaitlistEntry(entry);
+    setStep('WAITLIST_CONFIRMATION');
+  };
+
   const handleReset = () => {
     setStep('SELECT_ROUTE');
     setFromStation(null);
     setToStation(null);
     setSelectedSeat(null);
     setBooking(null);
+    setWaitlistEntry(null);
   };
 
   return (
@@ -104,7 +112,6 @@ const App: React.FC = () => {
                   selectedSeatId={selectedSeat?.seatId ?? null}
                   onSeatSelect={handleSeatSelected}
                 />
-                {/* Selected seat indicator */}
                 {selectedSeat && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
                     <div className="selected-seat-badge">
@@ -138,6 +145,7 @@ const App: React.FC = () => {
                 selectedSeat={selectedSeat}
                 estimatedFare={estimatedFare}
                 onBooked={handleBooked}
+                onWaitlisted={handleWaitlisted}
                 onBack={() => setStep('SELECT_SEAT')}
               />
             )}
@@ -145,6 +153,13 @@ const App: React.FC = () => {
             {step === 'CONFIRMATION' && booking && (
               <BookingConfirmation
                 booking={booking}
+                onBookAnother={handleReset}
+              />
+            )}
+
+            {step === 'WAITLIST_CONFIRMATION' && waitlistEntry && (
+              <WaitlistConfirmation
+                entry={waitlistEntry}
                 onBookAnother={handleReset}
               />
             )}
