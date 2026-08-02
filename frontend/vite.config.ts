@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // In dev mode, proxy /api requests to the backend so we don't need CORS
+      // In dev mode, proxy /api requests to the backend — avoids CORS headers.
       '/api': {
         target: 'http://localhost:4000',
         changeOrigin: true,

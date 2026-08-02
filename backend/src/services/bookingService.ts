@@ -1,35 +1,4 @@
-/**
- * bookingService.ts
- *
- * Handles booking creation and cancellation with ACID guarantees.
- *
- * ─── Concurrency Strategy: Pessimistic Locking ──────────────────────────────
- * Problem: Two users simultaneously see seat 1A free for Colombo→Kandy.
- *   Both pass the availability check. Both insert a booking. Double-booking.
- *
- * Solution: `SELECT ... FOR UPDATE` inside a serialisable transaction.
- *
- *   BEGIN;
- *     SELECT id FROM "Seat" WHERE id = $seatId FOR UPDATE;
- *     -- This locks the seat row. Any other transaction trying to lock
- *     -- the same row BLOCKS here until we COMMIT or ROLLBACK.
- *     -- ↳ Check for overlapping bookings (safe — no concurrent write can
- *     --   sneak in between the check and the insert).
- *     INSERT INTO bookings ...
- *   COMMIT;
- *
- * Why pessimistic over optimistic?
- *   Optimistic locking (check-version, retry on conflict) works well when
- *   conflicts are rare (e.g. editing a document). A train seat during peak
- *   hours can have dozens of simultaneous booking attempts — the retry storm
- *   under optimistic locking would be worse than the short queue under
- *   pessimistic locking. The lock is held for ~5ms.
- *
- * Why row-level not table-level?
- *   We lock only the one seat row being booked. Other seats on the same
- *   train continue to be bookable concurrently — no unnecessary contention.
- * ────────────────────────────────────────────────────────────────────────────
- */
+// bookingService.ts — booking creation and cancellation with ACID guarantees.
 
 import { prisma } from '../db';
 import { config } from '../config';
@@ -74,8 +43,8 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
 
   return prisma.$transaction(async (tx) => {
     // ── Step 1: Lock the seat row ────────────────────────────────────────────
-    // Any concurrent transaction trying to book this same seat will block
-    // here until we commit or rollback. This is the critical section.
+    // Blocks any concurrent transaction that tries to book the same seat
+    // until this transaction commits or rolls back.
     const lockedSeats = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM "Seat" WHERE id = ${seatId} FOR UPDATE
     `;
@@ -109,8 +78,8 @@ export async function createBooking(input: CreateBookingInput): Promise<BookingR
     const toOrder   = toStation.order;
 
     // ── Step 4: Check for overlapping confirmed bookings ─────────────────────
-    // Safe to do after locking — no concurrent transaction can insert a
-    // conflicting booking until this transaction completes.
+    // Safe after locking — no concurrent transaction can insert a conflicting
+    // booking until this transaction completes.
     const conflicts = await tx.booking.count({
       where: {
         seatId,

@@ -1,25 +1,4 @@
-/**
- * availabilityService.ts
- *
- * Core logic for determining which seats are available for a given leg.
- *
- * ─── The Overlap Formula ────────────────────────────────────────────────────
- * A seat is UNAVAILABLE for leg [newFrom, newTo) if there is any CONFIRMED
- * booking [existFrom, existTo) where:
- *
- *   existFrom < newTo   AND   existTo > newFrom
- *
- * This is the standard interval overlap test. We use a half-open interval
- * [from, to) so that two consecutive bookings (A→B, B→C) on the same seat
- * do NOT conflict. The passenger leaving at B and the passenger boarding at B
- * can share the same physical seat without issue.
- *
- * We store fromStationOrder and toStationOrder directly on the Booking row
- * (denormalised from the Station table) so this query is a pure integer
- * comparison — no JOIN required, and the composite index on
- * (seatId, status, fromStationOrder, toStationOrder) makes it fast.
- * ────────────────────────────────────────────────────────────────────────────
- */
+// availabilityService.ts — determines which seats are free for a given leg.
 
 import { prisma } from '../db';
 import { NotFoundError } from '../errors';

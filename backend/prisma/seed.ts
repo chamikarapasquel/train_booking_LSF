@@ -4,7 +4,6 @@
  *   - 8 coaches (3 RESERVED, 5 UNRESERVED)
  *   - 144 individually numbered seats across the 3 reserved coaches
  *
- * This script is idempotent: running it twice will not create duplicates.
  * Coaches and seats per coach are configurable via RESERVED_COACH_ROWS
  * and RESERVED_COACH_COLS env vars (defaults: 12 rows × 4 columns = 48 seats).
  */

@@ -1,5 +1,4 @@
-// This is your Prisma schema file.
-// Learn more about it at https://pris.ly/d/prisma-schema
+// schema.prisma — database schema for the Lanka Scenic Rail segment booking system.
 
 generator client {
   provider = "prisma-client-js"
@@ -66,16 +65,7 @@ model Seat {
 
 // ─────────────────────────────────────────────
 // BOOKINGS
-//
-// Core design decision — interval representation:
-// We denormalise fromStationOrder and toStationOrder directly on the
-// booking row so that overlap detection is a single, index-friendly
-// integer comparison (no JOIN to stations required).
-//
-// A new booking [fromOrder, toOrder) CONFLICTS with an existing booking
-// [existingFrom, existingTo) when:
-//   newFrom < existingTo  AND  newTo > existingFrom
-//
+
 // The booking represents a HALF-OPEN interval: the passenger occupies
 // the seat from the departure station UP TO BUT NOT INCLUDING the
 // arrival station. This means two consecutive bookings (A→B, B→C)

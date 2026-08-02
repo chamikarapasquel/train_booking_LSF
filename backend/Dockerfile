@@ -17,7 +17,7 @@ COPY src ./src
 RUN npm run build
 
 # Compile the seed file separately — it lives in prisma/ (outside rootDir),
-# so we run tsc directly on just that one file.
+# run tsc directly on just that one file.
 RUN node_modules/.bin/tsc \
     --module CommonJS \
     --target ES2020 \
@@ -38,9 +38,11 @@ RUN npm ci --omit=dev
 
 # Compiled application
 COPY --from=builder /app/dist                  ./dist
+
 # Prisma client (generated in builder, not in prod node_modules yet)
 COPY --from=builder /app/node_modules/.prisma  ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma  ./node_modules/@prisma
+
 # Migration files (prisma migrate deploy reads these at runtime)
 COPY prisma ./prisma
 

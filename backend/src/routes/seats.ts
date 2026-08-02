@@ -5,7 +5,7 @@ import { ValidationError } from '../errors';
 const router = Router();
 
 /**
- * GET /api/seats/availability?fromStationId=X&toStationId=Y
+ * GET /api/seats/availability
  *
  * Returns all reserved-coach seats annotated with availability for the
  * requested leg. The frontend uses this to render the seat map.
