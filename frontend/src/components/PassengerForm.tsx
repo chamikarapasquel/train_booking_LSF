@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createBooking, joinWaitlist } from '../api/client';
+import { createBooking, joinWaitlist, fetchSeatAvailability } from '../api/client';
 import type { Station, SeatAvailability, Booking, WaitlistEntry } from '../types';
 
 interface PassengerFormProps {
@@ -27,6 +27,7 @@ const PassengerForm: React.FC<PassengerFormProps> = ({
   const [seatFull,      setSeatFull]      = useState(false);
   const [waitlisting,   setWaitlisting]   = useState(false);
   const [waitlistError, setWaitlistError] = useState<string | null>(null);
+  const [availableSeatCount, setAvailableSeatCount] = useState<number | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +47,13 @@ const PassengerForm: React.FC<PassengerFormProps> = ({
     } catch (err: unknown) {
       const errWithStatus = err as { status?: number; message?: string };
       if (errWithStatus.status === 409) {
+        try {
+          const seats = await fetchSeatAvailability(fromStation.id, toStation.id);
+          const availableCount = seats.filter(s => s.available).length;
+          setAvailableSeatCount(availableCount);
+        } catch {
+          setAvailableSeatCount(null); // Fallback
+        }
         setSeatFull(true);
       } else {
         setError(err instanceof Error ? err.message : 'Booking failed. Please try again.');
@@ -120,29 +128,56 @@ const PassengerForm: React.FC<PassengerFormProps> = ({
       {seatFull && (
         <div className="alert alert-waitlist mb-4" role="alert" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-3)' }}>
           <div>
-            <strong>😔 That seat was just taken!</strong>
-            <p style={{ fontSize: '0.85rem', marginTop: 4, opacity: 0.9 }}>
-              All seats for <strong>{fromStation.name} → {toStation.name}</strong> are currently full.
-              Join the waitlist and we'll automatically confirm your booking the moment a seat opens up.
-            </p>
+            {availableSeatCount === 0 ? (
+              <>
+                <strong>😔 That seat was just taken!</strong>
+                <p style={{ fontSize: '0.85rem', marginTop: 4, opacity: 0.9 }}>
+                  All seats for <strong>{fromStation.name} → {toStation.name}</strong> are currently full.
+                  Join the waitlist and we'll automatically confirm your booking the moment a seat opens up.
+                </p>
+              </>
+            ) : (
+              <>
+                <strong>😔 Seat {selectedSeat.coachName} · {selectedSeat.seatNumber} is taken!</strong>
+                <p style={{ fontSize: '0.85rem', marginTop: 4, opacity: 0.9 }}>
+                  This seat was just booked by someone else. You can join the waitlist for seat{' '}
+                  <strong>{selectedSeat.coachName} · {selectedSeat.seatNumber}</strong> and we'll
+                  automatically confirm you if it opens up — or go back and pick a different seat.
+                </p>
+              </>
+            )}
             {waitlistError && (
               <p style={{ color: 'var(--color-danger)', fontSize: '0.82rem', marginTop: 6 }}>
                 {waitlistError}
               </p>
             )}
           </div>
-          <button
-            id="join-waitlist-btn"
-            className="btn btn-waitlist"
-            onClick={handleJoinWaitlist}
-            disabled={!name.trim() || waitlisting}
-          >
-            {waitlisting ? (
-              <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Joining…</>
-            ) : (
-              '⏳ Join Waitlist'
+          <div className="flex gap-4 flex-wrap">
+            <button
+              id="join-waitlist-btn"
+              className="btn btn-waitlist"
+              onClick={handleJoinWaitlist}
+              disabled={!name.trim() || waitlisting}
+            >
+              {waitlisting ? (
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Joining…</>
+              ) : availableSeatCount === 0 ? (
+                '⏳ Join Waitlist'
+              ) : (
+                '⏳ Join Waitlist for This Seat'
+              )}
+            </button>
+            {availableSeatCount !== 0 && (
+              <button
+                id="choose-another-seat-btn"
+                className="btn btn-outline"
+                onClick={onBack}
+                disabled={waitlisting}
+              >
+                💺 Choose Another Seat
+              </button>
             )}
-          </button>
+          </div>
         </div>
       )}
 
