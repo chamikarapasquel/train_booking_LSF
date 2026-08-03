@@ -1829,3 +1829,9 @@ h1, h2, h3, h4, h5, h6 { line-height: 1.2; }
 .admin-error {
   color: var(--color-danger);
 }
+
+@keyframes pulse {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+  100% { opacity: 1; transform: scale(1); }
+}

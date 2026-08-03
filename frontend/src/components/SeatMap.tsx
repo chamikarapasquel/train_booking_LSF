@@ -125,15 +125,32 @@ const SeatMap: React.FC<SeatMapProps> = ({ fromStation, toStation, selectedSeatI
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let mounted = true;
+
+    // Initial load
     setLoading(true);
-    setError(null);
     fetchSeatAvailability(fromStation.id, toStation.id)
       .then((data) => {
+        if (!mounted) return;
         setSeats(data);
         if (data.length > 0) setActiveCoach(data[0].coachId);
       })
-      .catch(() => setError('Failed to load seat availability.'))
-      .finally(() => setLoading(false));
+      .catch(() => { if (mounted) setError('Failed to load seat availability.'); })
+      .finally(() => { if (mounted) setLoading(false); });
+
+    // Poll every 5 seconds
+    const intervalId = setInterval(() => {
+      fetchSeatAvailability(fromStation.id, toStation.id)
+        .then((data) => {
+          if (mounted) setSeats(data);
+        })
+        .catch(() => { /* silently fail background polls */ });
+    }, 5000);
+
+    return () => {
+      mounted = false;
+      clearInterval(intervalId);
+    };
   }, [fromStation.id, toStation.id]);
 
   // Group by coach
@@ -205,7 +222,13 @@ const SeatMap: React.FC<SeatMapProps> = ({ fromStation, toStation, selectedSeatI
         <div className="seatmap-header-left">
           <div className="seatmap-icon">💺</div>
           <div>
-            <div className="seatmap-title">Select Your Seat</div>
+            <div className="seatmap-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Select Your Seat
+              <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--color-success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ width: '6px', height: '6px', backgroundColor: 'var(--color-success)', borderRadius: '50%', display: 'inline-block', animation: 'pulse 2s infinite' }}></span>
+                Live Updates
+              </span>
+            </div>
             <div className="seatmap-route">
               {fromStation.name} <span className="seatmap-route-arrow">→</span> {toStation.name}
             </div>
