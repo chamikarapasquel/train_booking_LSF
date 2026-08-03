@@ -6,9 +6,13 @@ import SeatMap from './components/SeatMap';
 import PassengerForm from './components/PassengerForm';
 import BookingConfirmation from './components/BookingConfirmation';
 import WaitlistConfirmation from './components/WaitlistConfirmation';
+import AdminDashboard from './components/AdminDashboard';
 import type { Station, SeatAvailability, Booking, WaitlistEntry, BookingStep } from './types';
 
 const App: React.FC = () => {
+  // ── View Mode ─────────────────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState<'BOOKING' | 'ADMIN'>('BOOKING');
+
   // ── Booking flow state ────────────────────────────────────────────────────
   const [step,           setStep]           = useState<BookingStep>('SELECT_ROUTE');
   const [fromStation,    setFromStation]    = useState<Station | null>(null);
@@ -53,12 +57,19 @@ const App: React.FC = () => {
 
   return (
     <>
-      <Header />
+      <Header 
+        onToggleAdmin={() => setViewMode(prev => prev === 'ADMIN' ? 'BOOKING' : 'ADMIN')}
+        isAdminView={viewMode === 'ADMIN'}
+      />
 
       <main className="main-content">
         <div className="container">
 
-          {/* Hero */}
+          {viewMode === 'ADMIN' ? (
+            <AdminDashboard />
+          ) : (
+            <>
+              {/* Hero */}
           {step === 'SELECT_ROUTE' && (
             <section className="hero" aria-label="Hero section">
               <div className="hero-eyebrow">Sri Lanka Railways</div>
@@ -165,6 +176,8 @@ const App: React.FC = () => {
             )}
 
           </div>
+            </>
+          )}
         </div>
       </main>
     </>

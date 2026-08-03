@@ -107,3 +107,16 @@ export async function cancelWaitlistEntry(entryId: string): Promise<WaitlistEntr
   });
   return data.entry;
 }
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export interface AdminStats {
+  totalRevenue: number;
+  activeBookings: number;
+  waitlistedPassengers: number;
+  totalSeats: number;
+}
+
+export async function fetchAdminStats(): Promise<AdminStats> {
+  return request<AdminStats>('/admin/stats');
+}
